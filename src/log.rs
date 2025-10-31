@@ -45,6 +45,7 @@ pub fn init<P: AsRef<Path>>(
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
         .with_ansi(false);
 
     if use_stdout {
@@ -58,4 +59,17 @@ pub fn init<P: AsRef<Path>>(
 
     //guard用于保证日志缓冲区成功刷新到输出中
     Ok(guard)
+}
+
+#[cfg(test)]
+mod tests {
+    use tracing::info;
+
+    use super::*;
+
+    #[test]
+    fn test_localtime() {
+        let _guard = init("stdout", "info").unwrap();
+        info!("this is a localtime log");
+    }
 }
