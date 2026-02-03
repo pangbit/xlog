@@ -1,0 +1,116 @@
+use crate::config::Config;
+use crate::output::Output;
+use crate::formatter::Formatter;
+use crate::error::{Result, XlogError};
+use std::sync::Once;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::filter::LevelFilter;
+
+static INIT: Once = Once::new();
+static mut INITIALIZED: bool = false;
+
+/// 初始化日志系统
+pub(crate) fn initialize(config: Config) -> Result<WorkerGuard> {
+    let mut result: Option<Result<WorkerGuard>> = None;
+
+    INIT.call_once(|| {
+        result = Some(do_initialize(config));
+        unsafe { INITIALIZED = true; }
+    });
+
+    // 如果已经初始化过，返回错误
+    if unsafe { INITIALIZED } && result.is_none() {
+        return Err(XlogError::AlreadyInitialized);
+    }
+
+    result.unwrap()
+}
+
+fn do_initialize(config: Config) -> Result<WorkerGuard> {
+    // 构建 EnvFilter
+    let level_filter: LevelFilter = config.level.into();
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(level_filter.into())
+        .from_env_lossy();
+
+    // 保存输出类型信息（用于判断是否需要 ANSI 颜色）
+    let is_terminal_output = matches!(config.output, Output::Stdout | Output::Stderr);
+
+    // 构建输出 writer
+    let (non_blocking, guard) = match config.output {
+        Output::Stdout => {
+            tracing_appender::non_blocking(std::io::stdout())
+        }
+        Output::Stderr => {
+            tracing_appender::non_blocking(std::io::stderr())
+        }
+        Output::File { path, rotation, max_files } => {
+            let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation(rotation.into())
+                .max_log_files(max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            tracing_appender::non_blocking(file_appender)
+        }
+        Output::Multi(_) => {
+            // 多输出需要更复杂的实现，暂时使用 stdout
+            tracing_appender::non_blocking(std::io::stdout())
+        }
+    };
+
+    // 根据格式化器类型初始化不同的订阅者
+    match config.formatter {
+        Formatter::Compact => {
+            let fmt_layer = fmt::layer()
+                .with_writer(non_blocking)
+                .with_target(config.include_target)
+                .with_file(config.include_file)
+                .with_line_number(config.include_line_number)
+                .with_timer(fmt::time::LocalTime::rfc_3339())
+                .with_ansi(is_terminal_output)
+                .compact();
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .try_init()
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+        }
+        Formatter::Pretty => {
+            let fmt_layer = fmt::layer()
+                .with_writer(non_blocking)
+                .with_target(config.include_target)
+                .with_file(config.include_file)
+                .with_line_number(config.include_line_number)
+                .with_timer(fmt::time::LocalTime::rfc_3339())
+                .with_ansi(is_terminal_output)
+                .pretty();
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .try_init()
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+        }
+        Formatter::Json => {
+            let fmt_layer = fmt::layer()
+                .with_writer(non_blocking)
+                .with_target(config.include_target)
+                .with_file(config.include_file)
+                .with_line_number(config.include_line_number)
+                .with_timer(fmt::time::LocalTime::rfc_3339())
+                .with_ansi(false) // JSON doesn't need ANSI colors
+                .json();
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .try_init()
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+        }
+    }
+
+    Ok(guard)
+}

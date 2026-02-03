@@ -78,8 +78,7 @@ impl Config {
 
     /// 初始化日志系统
     pub fn init(self) -> Result<WorkerGuard> {
-        // Temporarily unimplemented until init module is created
-        unimplemented!("init module not yet implemented")
+        crate::init::initialize(self)
     }
 }
 
