@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use crate::formatter::Formatter;
 
 /// 日志文件轮转策略
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +76,45 @@ impl Output {
             outputs: Vec::new(),
         }
     }
+
+    /// 关联格式化器
+    pub fn with_formatter(self, formatter: Formatter) -> OutputWithFormatter {
+        match self {
+            Output::Stdout => OutputWithFormatter::Stdout { formatter },
+            Output::Stderr => OutputWithFormatter::Stderr { formatter },
+            Output::File { path, rotation, max_files } => {
+                OutputWithFormatter::File {
+                    path,
+                    rotation,
+                    max_files,
+                    formatter,
+                }
+            }
+            Output::Multi(_) => {
+                panic!("Multi output 不支持 with_formatter，请在每个子输出上调用")
+            }
+        }
+    }
+}
+
+/// 带格式化器的输出
+#[derive(Debug)]
+pub enum OutputWithFormatter {
+    /// 标准输出
+    Stdout { formatter: Formatter },
+    /// 标准错误输出
+    Stderr { formatter: Formatter },
+    /// 文件输出
+    File {
+        /// 日志目录路径
+        path: PathBuf,
+        /// 轮转策略
+        rotation: Rotation,
+        /// 最大保留文件数
+        max_files: usize,
+        /// 格式化器
+        formatter: Formatter,
+    },
 }
 
 /// 文件输出 Builder
@@ -171,6 +211,82 @@ mod tests {
                 assert_eq!(outputs.len(), 2);
             }
             _ => panic!("Expected Multi output"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod formatter_tests {
+    use super::*;
+
+    #[test]
+    fn test_stdout_with_formatter() {
+        let output = Output::stdout().with_formatter(Formatter::Json);
+
+        match output {
+            OutputWithFormatter::Stdout { formatter } => {
+                assert!(matches!(formatter, Formatter::Json));
+            }
+            _ => panic!("Expected Stdout with formatter"),
+        }
+    }
+
+    #[test]
+    fn test_stderr_with_formatter() {
+        let output = Output::stderr().with_formatter(Formatter::Compact);
+
+        match output {
+            OutputWithFormatter::Stderr { formatter } => {
+                assert!(matches!(formatter, Formatter::Compact));
+            }
+            _ => panic!("Expected Stderr with formatter"),
+        }
+    }
+
+    #[test]
+    fn test_file_with_formatter() {
+        let output = Output::file("./logs")
+            .with_rotation(Rotation::Hourly)
+            .max_files(24)
+            .build()
+            .with_formatter(Formatter::Pretty);
+
+        match output {
+            OutputWithFormatter::File {
+                path,
+                rotation,
+                max_files,
+                formatter,
+            } => {
+                assert_eq!(path, PathBuf::from("./logs"));
+                assert!(matches!(rotation, Rotation::Hourly));
+                assert_eq!(max_files, 24);
+                assert!(matches!(formatter, Formatter::Pretty));
+            }
+            _ => panic!("Expected File with formatter"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Multi output 不支持 with_formatter，请在每个子输出上调用")]
+    fn test_multi_with_formatter_panics() {
+        let multi = Output::multi()
+            .push(Output::stdout())
+            .push(Output::stderr())
+            .build();
+
+        let _ = multi.with_formatter(Formatter::Json);
+    }
+
+    #[test]
+    fn test_formatter_with_default() {
+        let output = Output::stdout().with_formatter(Formatter::default());
+
+        match output {
+            OutputWithFormatter::Stdout { formatter } => {
+                assert!(matches!(formatter, Formatter::Pretty));
+            }
+            _ => panic!("Expected Stdout with Pretty formatter"),
         }
     }
 }
