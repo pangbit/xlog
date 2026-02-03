@@ -30,7 +30,7 @@ impl From<Rotation> for tracing_appender::rolling::Rotation {
 }
 
 /// 日志输出目标
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum Output {
     /// 标准输出
     #[default]
@@ -96,7 +96,7 @@ impl Output {
 }
 
 /// 带格式化器的输出
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum OutputWithFormatter {
     /// 标准输出
     Stdout { formatter: Formatter },
