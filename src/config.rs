@@ -82,6 +82,18 @@ impl Config {
         self
     }
 
+    /// 设置模块的日志级别
+    pub fn filter_module(mut self, module: &str, level: Level) -> Self {
+        self.module_filters.insert(module.to_string(), level);
+        self
+    }
+
+    /// 添加自定义过滤指令
+    pub fn add_directive(mut self, directive: &str) -> Self {
+        self.custom_directives.push(directive.to_string());
+        self
+    }
+
     /// 初始化日志系统
     pub fn init(self) -> Result<WorkerGuard> {
         crate::init::initialize(self)
@@ -145,5 +157,25 @@ mod advanced_tests {
 
         assert_eq!(config.module_filters.len(), 1);
         assert_eq!(config.module_filters.get("hyper"), Some(&Level::Warn));
+    }
+
+    #[test]
+    fn test_filter_module_api() {
+        let config = Config::new()
+            .filter_module("hyper", Level::Warn)
+            .filter_module("tokio", Level::Error);
+
+        assert_eq!(config.module_filters.get("hyper"), Some(&Level::Warn));
+        assert_eq!(config.module_filters.get("tokio"), Some(&Level::Error));
+    }
+
+    #[test]
+    fn test_add_directive_api() {
+        let config = Config::new()
+            .add_directive("hyper::client=trace")
+            .add_directive("tokio::runtime=debug");
+
+        assert_eq!(config.custom_directives.len(), 2);
+        assert_eq!(config.custom_directives[0], "hyper::client=trace");
     }
 }
