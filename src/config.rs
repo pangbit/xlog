@@ -2,6 +2,7 @@ use crate::error::Result;
 use crate::formatter::Formatter;
 use crate::level::Level;
 use crate::output::Output;
+use std::collections::HashMap;
 use tracing_appender::non_blocking::WorkerGuard;
 
 /// 日志系统配置
@@ -19,6 +20,8 @@ pub struct Config {
     pub(crate) include_line_number: bool,
     /// 是否包含 target
     pub(crate) include_target: bool,
+    pub(crate) module_filters: HashMap<String, Level>,
+    pub(crate) custom_directives: Vec<String>,
 }
 
 impl Default for Config {
@@ -30,6 +33,8 @@ impl Default for Config {
             include_file: true,
             include_line_number: true,
             include_target: false,
+            module_filters: HashMap::new(),
+            custom_directives: Vec::new(),
         }
     }
 }
@@ -121,5 +126,24 @@ mod tests {
         assert_eq!(config.level, Level::Warn);
         assert!(!config.include_file);
         assert!(!config.include_line_number);
+    }
+}
+
+#[cfg(test)]
+mod advanced_tests {
+    use super::*;
+
+    #[test]
+    fn test_config_with_module_filters() {
+        let mut filters = HashMap::new();
+        filters.insert("hyper".to_string(), Level::Warn);
+
+        let config = Config {
+            module_filters: filters,
+            ..Default::default()
+        };
+
+        assert_eq!(config.module_filters.len(), 1);
+        assert_eq!(config.module_filters.get("hyper"), Some(&Level::Warn));
     }
 }
