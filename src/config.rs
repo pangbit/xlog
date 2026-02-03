@@ -5,6 +5,12 @@ use crate::output::Output;
 use std::collections::HashMap;
 use tracing_appender::non_blocking::WorkerGuard;
 
+/// 速率限制配置
+#[derive(Debug, Clone, Copy)]
+pub struct RateLimit {
+    pub(crate) max_per_second: u32,
+}
+
 /// 日志系统配置
 #[derive(Debug)]
 pub struct Config {
@@ -22,6 +28,7 @@ pub struct Config {
     pub(crate) include_target: bool,
     pub(crate) module_filters: HashMap<String, Level>,
     pub(crate) custom_directives: Vec<String>,
+    pub(crate) rate_limit: Option<RateLimit>,
 }
 
 impl Default for Config {
@@ -35,6 +42,7 @@ impl Default for Config {
             include_target: false,
             module_filters: HashMap::new(),
             custom_directives: Vec::new(),
+            rate_limit: None,
         }
     }
 }
@@ -91,6 +99,12 @@ impl Config {
     /// 添加自定义过滤指令
     pub fn add_directive(mut self, directive: &str) -> Self {
         self.custom_directives.push(directive.to_string());
+        self
+    }
+
+    /// 设置速率限制
+    pub fn rate_limit(mut self, max_per_second: u32) -> Self {
+        self.rate_limit = Some(RateLimit { max_per_second });
         self
     }
 

@@ -63,6 +63,11 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
     // 使用新的 build_env_filter 替代原有逻辑
     let env_filter = build_env_filter(&config)?;
 
+    // 检查速率限制配置
+    if let Some(_rate_limit) = config.rate_limit {
+        // TODO: 在 Task 2.3 中实现 RateLimitLayer
+    }
+
     // 保存输出类型信息（用于判断是否需要 ANSI 颜色）
     let is_terminal_output = matches!(config.output, Output::Stdout | Output::Stderr);
 
