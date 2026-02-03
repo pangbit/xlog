@@ -1,9 +1,10 @@
 /// 日志格式化器
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Formatter {
     /// 紧凑格式 - 单行输出，无颜色，适合生产环境
     Compact,
     /// 美观格式 - 多行格式，ANSI 颜色，适合开发环境（默认）
+    #[default]
     Pretty,
     /// JSON 格式 - 结构化输出，适合日志收集系统
     Json,
@@ -23,12 +24,6 @@ impl Formatter {
     /// 创建 JSON 格式化器
     pub fn json() -> Self {
         Self::Json
-    }
-}
-
-impl Default for Formatter {
-    fn default() -> Self {
-        Self::Pretty
     }
 }
 

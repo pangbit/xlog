@@ -31,19 +31,19 @@
 //! }
 //! ```
 
+mod config;
 mod error;
+mod formatter;
+mod init;
 mod level;
 mod output;
-mod formatter;
-mod config;
-mod init;
 
 // 导出公共类型
-pub use error::{XlogError, Result};
-pub use level::Level;
-pub use output::{Output, Rotation, FileOutputBuilder, MultiOutputBuilder};
-pub use formatter::Formatter;
 pub use config::Config;
+pub use error::{Result, XlogError};
+pub use formatter::Formatter;
+pub use level::Level;
+pub use output::{FileOutputBuilder, MultiOutputBuilder, Output, Rotation};
 
 use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -103,4 +103,3 @@ pub fn init_file<P: Into<PathBuf>>(path: P, level: Level) -> Result<WorkerGuard>
         .output(Output::file(path).build())
         .init()
 }
-

@@ -1,5 +1,5 @@
-use xlog::{Config, Level, Output, Formatter, Result};
 use tracing::info;
+use xlog::{Config, Formatter, Level, Output, Result};
 
 fn main() -> Result<()> {
     let _guard = Config::new()

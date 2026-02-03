@@ -1,6 +1,6 @@
-use xlog::{Config, Level, Output, Rotation, Result};
-use tracing::info;
 use std::fs;
+use tracing::info;
+use xlog::{Config, Level, Output, Result, Rotation};
 
 fn main() -> Result<()> {
     // 创建日志目录（如果不存在）
@@ -12,7 +12,7 @@ fn main() -> Result<()> {
             Output::file("./logs")
                 .with_rotation(Rotation::Daily)
                 .max_files(7)
-                .build()
+                .build(),
         )
         .init()?;
 

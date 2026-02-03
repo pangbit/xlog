@@ -1,5 +1,5 @@
-use xlog::{Level, Output, Config};
-use std::path::PathBuf;
+use std::str::FromStr;
+use xlog::{Config, Level, Output};
 
 #[test]
 fn test_quick_init() {

@@ -1,4 +1,4 @@
-use xlog::{Config, Level, Output, Formatter};
+use xlog::{Config, Formatter, Level, Output};
 
 #[test]
 fn test_init_stdout() {

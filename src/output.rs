@@ -29,9 +29,10 @@ impl From<Rotation> for tracing_appender::rolling::Rotation {
 }
 
 /// 日志输出目标
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Output {
     /// 标准输出
+    #[default]
     Stdout,
     /// 标准错误输出
     Stderr,
@@ -115,7 +116,7 @@ pub struct MultiOutputBuilder {
 
 impl MultiOutputBuilder {
     /// 添加一个输出目标
-    pub fn add(mut self, output: Output) -> Self {
+    pub fn push(mut self, output: Output) -> Self {
         self.outputs.push(output);
         self
     }
@@ -145,7 +146,11 @@ mod tests {
             .build();
 
         match output {
-            Output::File { path, rotation, max_files } => {
+            Output::File {
+                path,
+                rotation,
+                max_files,
+            } => {
                 assert_eq!(path, PathBuf::from("./logs"));
                 assert!(matches!(rotation, Rotation::Hourly));
                 assert_eq!(max_files, 24);
@@ -157,8 +162,8 @@ mod tests {
     #[test]
     fn test_multi_output() {
         let multi = Output::multi()
-            .add(Output::stdout())
-            .add(Output::stderr())
+            .push(Output::stdout())
+            .push(Output::stderr())
             .build();
 
         match multi {

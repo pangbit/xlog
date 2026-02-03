@@ -1,0 +1,18 @@
+  2026-02-03T12:43:32.396543032+08:00  INFO  This message goes to file
+    at examples/file_logging.rs:15
+
+  2026-02-03T12:43:32.396714068+08:00  INFO  Logs will rotate daily
+    at examples/file_logging.rs:16
+
+  2026-02-03T12:43:47.589927191+08:00  INFO  This message goes to file
+    at examples/file_logging.rs:19
+
+  2026-02-03T12:43:47.590091871+08:00  INFO  Logs will rotate daily
+    at examples/file_logging.rs:20
+
+  2026-02-03T12:57:19.908248559+08:00  INFO  This message goes to file
+    at examples/file_logging.rs:19
+
+  2026-02-03T12:57:19.908405057+08:00  INFO  Logs will rotate daily
+    at examples/file_logging.rs:20
+

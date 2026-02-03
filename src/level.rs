@@ -2,13 +2,14 @@ use crate::error::{Result, XlogError};
 use tracing_subscriber::filter::LevelFilter;
 
 /// 日志级别枚举
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Level {
     /// Trace 级别 - 最详细
     Trace,
     /// Debug 级别 - 调试信息
     Debug,
     /// Info 级别 - 一般信息
+    #[default]
     Info,
     /// Warn 级别 - 警告信息
     Warn,
@@ -16,9 +17,10 @@ pub enum Level {
     Error,
 }
 
-impl Level {
-    /// 从字符串解析日志级别（不区分大小写）
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for Level {
+    type Err = XlogError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "trace" => Ok(Self::Trace),
             "debug" => Ok(Self::Debug),
@@ -45,6 +47,7 @@ impl From<Level> for LevelFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn test_level_from_str() {

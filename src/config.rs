@@ -1,7 +1,7 @@
+use crate::error::Result;
+use crate::formatter::Formatter;
 use crate::level::Level;
 use crate::output::Output;
-use crate::formatter::Formatter;
-use crate::error::Result;
 use tracing_appender::non_blocking::WorkerGuard;
 
 /// 日志系统配置
@@ -36,6 +36,7 @@ impl Default for Config {
 
 impl Config {
     /// 创建新的配置（使用默认值）
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

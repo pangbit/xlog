@@ -1,5 +1,5 @@
+use tracing::{error, info, warn};
 use xlog::Result;
-use tracing::{info, warn, error};
 
 fn main() -> Result<()> {
     // 最简单的使用方式

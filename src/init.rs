@@ -1,12 +1,12 @@
 use crate::config::Config;
-use crate::output::Output;
-use crate::formatter::Formatter;
 use crate::error::{Result, XlogError};
+use crate::formatter::Formatter;
+use crate::output::Output;
 use std::sync::Once;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
-use tracing_subscriber::filter::LevelFilter;
 
 static INIT: Once = Once::new();
 static mut INITIALIZED: bool = false;
@@ -17,7 +17,9 @@ pub(crate) fn initialize(config: Config) -> Result<WorkerGuard> {
 
     INIT.call_once(|| {
         result = Some(do_initialize(config));
-        unsafe { INITIALIZED = true; }
+        unsafe {
+            INITIALIZED = true;
+        }
     });
 
     // 如果已经初始化过，返回错误
@@ -40,13 +42,13 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
 
     // 构建输出 writer
     let (non_blocking, guard) = match config.output {
-        Output::Stdout => {
-            tracing_appender::non_blocking(std::io::stdout())
-        }
-        Output::Stderr => {
-            tracing_appender::non_blocking(std::io::stderr())
-        }
-        Output::File { path, rotation, max_files } => {
+        Output::Stdout => tracing_appender::non_blocking(std::io::stdout()),
+        Output::Stderr => tracing_appender::non_blocking(std::io::stderr()),
+        Output::File {
+            path,
+            rotation,
+            max_files,
+        } => {
             let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
                 .rotation(rotation.into())
                 .max_log_files(max_files)
