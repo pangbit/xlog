@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crate::formatter::Formatter;
+use std::path::PathBuf;
 
 /// 日志文件轮转策略
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,14 +80,16 @@ impl Output {
         match self {
             Output::Stdout => OutputWithFormatter::Stdout { formatter },
             Output::Stderr => OutputWithFormatter::Stderr { formatter },
-            Output::File { path, rotation, max_files } => {
-                OutputWithFormatter::File {
-                    path,
-                    rotation,
-                    max_files,
-                    formatter,
-                }
-            }
+            Output::File {
+                path,
+                rotation,
+                max_files,
+            } => OutputWithFormatter::File {
+                path,
+                rotation,
+                max_files,
+                formatter,
+            },
             Output::Multi(_) => {
                 panic!("Multi output 不支持 with_formatter，请在每个子输出上调用")
             }
@@ -152,6 +154,12 @@ pub struct MultiOutputBuilder {
     outputs: Vec<OutputWithFormatter>,
 }
 
+impl Default for MultiOutputBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MultiOutputBuilder {
     /// 创建新的多输出 Builder
     pub fn new() -> Self {
@@ -161,7 +169,7 @@ impl MultiOutputBuilder {
     }
 
     /// 添加输出
-    pub fn add(mut self, output: OutputWithFormatter) -> Self {
+    pub fn add_output(mut self, output: OutputWithFormatter) -> Self {
         self.outputs.push(output);
         self
     }
@@ -207,8 +215,8 @@ mod tests {
     #[test]
     fn test_multi_output() {
         let multi = Output::multi()
-            .add(Output::stdout().with_formatter(Formatter::Pretty))
-            .add(Output::stderr().with_formatter(Formatter::Json))
+            .add_output(Output::stdout().with_formatter(Formatter::Pretty))
+            .add_output(Output::stderr().with_formatter(Formatter::Json))
             .build();
 
         match multi {
@@ -222,9 +230,9 @@ mod tests {
     #[test]
     fn test_multi_output_with_formatters() {
         let multi = Output::multi()
-            .add(Output::stdout().with_formatter(Formatter::Pretty))
-            .add(Output::stderr().with_formatter(Formatter::Json))
-            .add(
+            .add_output(Output::stdout().with_formatter(Formatter::Pretty))
+            .add_output(Output::stderr().with_formatter(Formatter::Json))
+            .add_output(
                 Output::file("./logs")
                     .with_rotation(Rotation::Daily)
                     .max_files(7)
@@ -330,8 +338,8 @@ mod formatter_tests {
     #[should_panic(expected = "Multi output 不支持 with_formatter，请在每个子输出上调用")]
     fn test_multi_with_formatter_panics() {
         let multi = Output::multi()
-            .add(Output::stdout().with_formatter(Formatter::Pretty))
-            .add(Output::stderr().with_formatter(Formatter::Json))
+            .add_output(Output::stdout().with_formatter(Formatter::Pretty))
+            .add_output(Output::stderr().with_formatter(Formatter::Json))
             .build();
 
         let _ = multi.with_formatter(Formatter::Json);

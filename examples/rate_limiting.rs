@@ -1,12 +1,9 @@
-use xlog::{Config, Level, Result};
 use tracing::info;
+use xlog::{Config, Level, Result};
 
 fn main() -> Result<()> {
     // 限制每秒最多 1000 条日志
-    let _guard = Config::new()
-        .level(Level::Info)
-        .rate_limit(1000)
-        .init()?;
+    let _guard = Config::new().level(Level::Info).rate_limit(1000).init()?;
 
     // 尝试记录大量日志
     for i in 0..5000 {

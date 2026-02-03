@@ -5,13 +5,13 @@ use crate::level::Level;
 use crate::output::{Output, OutputWithFormatter};
 use crate::rate_limiter::RateLimiter;
 use std::sync::{Arc, Once};
+use tracing::{Event, Subscriber};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::layer::Context;
+use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::Layer;
-use tracing::{Event, Subscriber};
+use tracing_subscriber::{fmt, EnvFilter};
 
 static INIT: Once = Once::new();
 static mut INITIALIZED: bool = false;
@@ -70,8 +70,7 @@ fn build_env_filter(config: &Config) -> Result<EnvFilter> {
     let filter_str = directives.join(",");
 
     // 解析过滤器
-    EnvFilter::try_new(&filter_str)
-        .map_err(|e| XlogError::InvalidConfig(e.to_string()))
+    EnvFilter::try_new(&filter_str).map_err(|e| XlogError::InvalidConfig(e.to_string()))
 }
 
 fn level_to_str(level: &Level) -> &'static str {
@@ -193,10 +192,7 @@ fn initialize_single_multi(
             if let Some(rl) = rate_limit_cfg {
                 let limiter = Arc::new(RateLimiter::new(rl.max_per_second));
                 registry
-                    .with(RateLimitLayer {
-                        inner: l1,
-                        limiter,
-                    })
+                    .with(RateLimitLayer { inner: l1, limiter })
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             } else {
@@ -211,10 +207,7 @@ fn initialize_single_multi(
             if let Some(rl) = rate_limit_cfg {
                 let limiter = Arc::new(RateLimiter::new(rl.max_per_second));
                 registry
-                    .with(RateLimitLayer {
-                        inner: l1,
-                        limiter,
-                    })
+                    .with(RateLimitLayer { inner: l1, limiter })
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             } else {
@@ -229,10 +222,7 @@ fn initialize_single_multi(
             if let Some(rl) = rate_limit_cfg {
                 let limiter = Arc::new(RateLimiter::new(rl.max_per_second));
                 registry
-                    .with(RateLimitLayer {
-                        inner: l1,
-                        limiter,
-                    })
+                    .with(RateLimitLayer { inner: l1, limiter })
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             } else {

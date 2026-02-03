@@ -60,12 +60,11 @@ impl RateLimiter {
         // 检查是否需要重置窗口（超过1秒）
         if now.saturating_sub(window) >= 1_000_000_000 {
             // 尝试重置窗口
-            if self.window_start.compare_exchange(
-                window,
-                now,
-                Ordering::Release,
-                Ordering::Relaxed
-            ).is_ok() {
+            if self
+                .window_start
+                .compare_exchange(window, now, Ordering::Release, Ordering::Relaxed)
+                .is_ok()
+            {
                 self.counter.store(0, Ordering::Release);
             }
         }

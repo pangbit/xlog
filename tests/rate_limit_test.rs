@@ -1,13 +1,10 @@
-use xlog::Config;
 use tracing::info;
+use xlog::Config;
 
 #[test]
 fn test_rate_limit_enforced() {
     // 初始化带速率限制的日志系统
-    let _guard = Config::new()
-        .rate_limit(10)
-        .init()
-        .unwrap();
+    let _guard = Config::new().rate_limit(10).init().unwrap();
 
     // 尝试记录超过限制的日志（100条）
     // 期望只有前10条能够通过，其余被丢弃

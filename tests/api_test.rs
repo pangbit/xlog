@@ -8,7 +8,7 @@ fn test_quick_init() {
 
 #[test]
 fn test_builder_api() {
-    let config = Config::new()
+    let _config = Config::new()
         .level(Level::Debug)
         .output(Output::file("./logs").build())
         .with_target(true);
