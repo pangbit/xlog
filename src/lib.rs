@@ -33,7 +33,6 @@
 
 mod error;
 mod level;
-mod log;
 mod output;
 mod formatter;
 mod config;
