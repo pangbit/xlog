@@ -9,6 +9,9 @@
 - 🔧 **灵活配置** - 支持多种输出和格式
 - 📦 **零依赖冲突** - 基于标准 tracing 生态
 - 🔄 **文件轮转** - 自动按时间轮转日志文件
+- 🎚️ **模块过滤** - 精细控制不同模块的日志级别
+- ⚡ **速率限制** - 防止日志洪水
+- 📤 **多输出** - 同时输出到多个目标
 
 ## 快速开始
 
@@ -80,6 +83,54 @@ fn main() -> Result<()> {
     tracing::info!(user = "alice", "User logged in");
     Ok(())
 }
+```
+
+## 高级功能
+
+### 模块级别过滤
+
+降低第三方库的日志噪音：
+
+```rust
+use xlog::{Config, Level};
+
+Config::new()
+    .level(Level::Debug)
+    .filter_module("hyper", Level::Warn)  // hyper 只输出 warn
+    .filter_module("tokio", Level::Error) // tokio 只输出 error
+    .init()?;
+```
+
+使用高级过滤表达式：
+
+```rust
+Config::new()
+    .add_directive("myapp::database=trace")   // 数据库模块 trace
+    .add_directive("myapp::api=debug")         // API 模块 debug
+    .init()?;
+```
+
+### 速率限制
+
+防止日志洪水：
+
+```rust
+Config::new()
+    .rate_limit(1000)  // 每秒最多 1000 条日志
+    .init()?;
+```
+
+### 多输出
+
+同时输出到多个目标：
+
+```rust
+let multi = Output::multi()
+    .add(Output::stdout().with_formatter(Formatter::Pretty))
+    .add(Output::file("./logs").build().with_formatter(Formatter::Json))
+    .build();
+
+Config::new().output(multi).init()?;
 ```
 
 ## 配置选项
