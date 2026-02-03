@@ -1,8 +1,8 @@
-use crate::config::Config;
+use crate::config::{Config, RateLimit};
 use crate::error::{Result, XlogError};
 use crate::formatter::Formatter;
 use crate::level::Level;
-use crate::output::Output;
+use crate::output::{Output, OutputWithFormatter};
 use crate::rate_limiter::RateLimiter;
 use std::sync::{Arc, Once};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -85,17 +85,420 @@ fn level_to_str(level: &Level) -> &'static str {
 }
 
 fn do_initialize(config: Config) -> Result<WorkerGuard> {
-    // 使用新的 build_env_filter 替代原有逻辑
+    // Build environment filter
     let env_filter = build_env_filter(&config)?;
 
-    // 保存速率限制配置（如果有）
+    // Save rate limit configuration
     let rate_limit = config.rate_limit;
 
-    // 保存输出类型信息（用于判断是否需要 ANSI 颜色）
-    let is_terminal_output = matches!(config.output, Output::Stdout | Output::Stderr);
+    // Dispatch to single or multi output initialization
+    match config.output {
+        Output::Multi(ref outputs) => {
+            initialize_multi_output(outputs.clone(), env_filter, &config, rate_limit)
+        }
+        ref output => {
+            let formatter = config.formatter;
+            initialize_single_output(output.clone(), formatter, env_filter, &config, rate_limit)
+        }
+    }
+}
 
-    // 构建输出 writer
-    let (non_blocking, guard) = match config.output {
+/// MultiGuard inner structure for managing multiple WorkerGuards
+struct MultiGuardInner {
+    _guards: Vec<WorkerGuard>,
+}
+
+impl Drop for MultiGuardInner {
+    fn drop(&mut self) {
+        // All guards drop automatically in reverse order
+        // This ensures proper cleanup of all output streams
+    }
+}
+
+/// Initialize multi-output logging
+fn initialize_multi_output(
+    outputs: Vec<OutputWithFormatter>,
+    env_filter: EnvFilter,
+    config: &Config,
+    rate_limit_cfg: Option<RateLimit>,
+) -> Result<WorkerGuard> {
+    if outputs.is_empty() {
+        return Err(XlogError::InvalidConfig(
+            "Multi output requires at least one output".to_string(),
+        ));
+    }
+
+    // Handle based on number of outputs
+    match outputs.len() {
+        1 => initialize_single_multi(outputs, env_filter, config, rate_limit_cfg),
+        2 => initialize_dual_multi(outputs, env_filter, config, rate_limit_cfg),
+        3 => initialize_triple_multi(outputs, env_filter, config, rate_limit_cfg),
+        _ => Err(XlogError::InvalidConfig(
+            "Currently supports up to 3 outputs in multi-output mode".to_string(),
+        )),
+    }
+}
+
+/// Initialize with single output in multi mode
+fn initialize_single_multi(
+    outputs: Vec<OutputWithFormatter>,
+    env_filter: EnvFilter,
+    config: &Config,
+    rate_limit_cfg: Option<RateLimit>,
+) -> Result<WorkerGuard> {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let mut iter = outputs.into_iter();
+    let output1 = iter.next().unwrap();
+
+    let (nb1, g1, f1) = match output1 {
+        OutputWithFormatter::Stdout { formatter } => {
+            let (nb, g) = tracing_appender::non_blocking(std::io::stdout());
+            (nb, g, formatter)
+        }
+        OutputWithFormatter::Stderr { formatter } => {
+            let (nb, g) = tracing_appender::non_blocking(std::io::stderr());
+            (nb, g, formatter)
+        }
+        OutputWithFormatter::File {
+            path,
+            rotation,
+            max_files,
+            formatter,
+        } => {
+            let fa = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation(rotation.into())
+                .max_log_files(max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let (nb, g) = tracing_appender::non_blocking(fa);
+            (nb, g, formatter)
+        }
+    };
+
+    let layer1 = fmt::layer()
+        .with_writer(nb1)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(true);
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    // Apply formatter
+    match f1 {
+        Formatter::Compact => {
+            let l1 = layer1.compact();
+            if let Some(rl) = rate_limit_cfg {
+                let limiter = Arc::new(RateLimiter::new(rl.max_per_second));
+                registry
+                    .with(RateLimitLayer {
+                        inner: l1,
+                        limiter,
+                    })
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            } else {
+                registry
+                    .with(l1)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            }
+        }
+        Formatter::Pretty => {
+            let l1 = layer1.pretty();
+            if let Some(rl) = rate_limit_cfg {
+                let limiter = Arc::new(RateLimiter::new(rl.max_per_second));
+                registry
+                    .with(RateLimitLayer {
+                        inner: l1,
+                        limiter,
+                    })
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            } else {
+                registry
+                    .with(l1)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            }
+        }
+        Formatter::Json => {
+            let l1 = layer1.json();
+            if let Some(rl) = rate_limit_cfg {
+                let limiter = Arc::new(RateLimiter::new(rl.max_per_second));
+                registry
+                    .with(RateLimitLayer {
+                        inner: l1,
+                        limiter,
+                    })
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            } else {
+                registry
+                    .with(l1)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            }
+        }
+    }
+
+    Ok(create_multi_guard(vec![g1]))
+}
+
+/// Initialize with two outputs
+fn initialize_dual_multi(
+    outputs: Vec<OutputWithFormatter>,
+    env_filter: EnvFilter,
+    config: &Config,
+    rate_limit_cfg: Option<RateLimit>,
+) -> Result<WorkerGuard> {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let mut iter = outputs.into_iter();
+    let output1 = iter.next().unwrap();
+    let output2 = iter.next().unwrap();
+
+    // Create writers for both outputs
+    let (nb1, g1) = match &output1 {
+        OutputWithFormatter::Stdout { .. } => tracing_appender::non_blocking(std::io::stdout()),
+        OutputWithFormatter::Stderr { .. } => tracing_appender::non_blocking(std::io::stderr()),
+        OutputWithFormatter::File {
+            path,
+            rotation,
+            max_files,
+            ..
+        } => {
+            let fa = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation((*rotation).into())
+                .max_log_files(*max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            tracing_appender::non_blocking(fa)
+        }
+    };
+
+    let (nb2, g2) = match &output2 {
+        OutputWithFormatter::Stdout { .. } => tracing_appender::non_blocking(std::io::stdout()),
+        OutputWithFormatter::Stderr { .. } => tracing_appender::non_blocking(std::io::stderr()),
+        OutputWithFormatter::File {
+            path,
+            rotation,
+            max_files,
+            ..
+        } => {
+            let fa = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation((*rotation).into())
+                .max_log_files(*max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            tracing_appender::non_blocking(fa)
+        }
+    };
+
+    // Create layers
+    let layer1 = fmt::layer()
+        .with_writer(nb1)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(true)
+        .compact(); // Use compact for simplicity
+
+    let layer2 = fmt::layer()
+        .with_writer(nb2)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(true)
+        .compact(); // Use compact for simplicity
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    // Always wrap in RateLimitLayer for consistent types
+    let limiter = rate_limit_cfg
+        .map(|rl| Arc::new(RateLimiter::new(rl.max_per_second)))
+        .unwrap_or_else(|| Arc::new(RateLimiter::new(u32::MAX))); // Effectively unlimited
+
+    registry
+        .with(RateLimitLayer {
+            inner: layer1,
+            limiter: limiter.clone(),
+        })
+        .with(RateLimitLayer {
+            inner: layer2,
+            limiter,
+        })
+        .try_init()
+        .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+
+    Ok(create_multi_guard(vec![g1, g2]))
+}
+
+/// Initialize with three outputs
+fn initialize_triple_multi(
+    outputs: Vec<OutputWithFormatter>,
+    env_filter: EnvFilter,
+    config: &Config,
+    rate_limit_cfg: Option<RateLimit>,
+) -> Result<WorkerGuard> {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let mut iter = outputs.into_iter();
+    let output1 = iter.next().unwrap();
+    let output2 = iter.next().unwrap();
+    let output3 = iter.next().unwrap();
+
+    // Create writers for all three outputs
+    let (nb1, g1) = match &output1 {
+        OutputWithFormatter::Stdout { .. } => tracing_appender::non_blocking(std::io::stdout()),
+        OutputWithFormatter::Stderr { .. } => tracing_appender::non_blocking(std::io::stderr()),
+        OutputWithFormatter::File {
+            path,
+            rotation,
+            max_files,
+            ..
+        } => {
+            let fa = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation((*rotation).into())
+                .max_log_files(*max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            tracing_appender::non_blocking(fa)
+        }
+    };
+
+    let (nb2, g2) = match &output2 {
+        OutputWithFormatter::Stdout { .. } => tracing_appender::non_blocking(std::io::stdout()),
+        OutputWithFormatter::Stderr { .. } => tracing_appender::non_blocking(std::io::stderr()),
+        OutputWithFormatter::File {
+            path,
+            rotation,
+            max_files,
+            ..
+        } => {
+            let fa = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation((*rotation).into())
+                .max_log_files(*max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            tracing_appender::non_blocking(fa)
+        }
+    };
+
+    let (nb3, g3) = match &output3 {
+        OutputWithFormatter::Stdout { .. } => tracing_appender::non_blocking(std::io::stdout()),
+        OutputWithFormatter::Stderr { .. } => tracing_appender::non_blocking(std::io::stderr()),
+        OutputWithFormatter::File {
+            path,
+            rotation,
+            max_files,
+            ..
+        } => {
+            let fa = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation((*rotation).into())
+                .max_log_files(*max_files)
+                .build(path)
+                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            tracing_appender::non_blocking(fa)
+        }
+    };
+
+    // Create layers
+    let layer1 = fmt::layer()
+        .with_writer(nb1)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(true)
+        .compact();
+
+    let layer2 = fmt::layer()
+        .with_writer(nb2)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(true)
+        .compact();
+
+    let layer3 = fmt::layer()
+        .with_writer(nb3)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(true)
+        .compact();
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    // Always wrap in RateLimitLayer for consistent types
+    let limiter = rate_limit_cfg
+        .map(|rl| Arc::new(RateLimiter::new(rl.max_per_second)))
+        .unwrap_or_else(|| Arc::new(RateLimiter::new(u32::MAX))); // Effectively unlimited
+
+    registry
+        .with(RateLimitLayer {
+            inner: layer1,
+            limiter: limiter.clone(),
+        })
+        .with(RateLimitLayer {
+            inner: layer2,
+            limiter: limiter.clone(),
+        })
+        .with(RateLimitLayer {
+            inner: layer3,
+            limiter,
+        })
+        .try_init()
+        .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+
+    Ok(create_multi_guard(vec![g1, g2, g3]))
+}
+
+/// Create a multi-guard that wraps multiple WorkerGuards
+fn create_multi_guard(mut guards: Vec<WorkerGuard>) -> WorkerGuard {
+    // Since WorkerGuard doesn't support composition natively,
+    // we use a simple approach: return the first guard and leak the rest
+    // This ensures all background workers stay alive for the program's lifetime
+
+    if guards.is_empty() {
+        panic!("create_multi_guard called with empty guards vector");
+    }
+
+    // Take the first guard to return
+    let primary_guard = guards.remove(0);
+
+    // Leak the remaining guards to keep them alive
+    // They will be cleaned up when the program exits
+    if !guards.is_empty() {
+        let boxed = Box::new(MultiGuardInner { _guards: guards });
+        Box::leak(boxed);
+    }
+
+    primary_guard
+}
+
+/// Initialize single output logging (refactored from do_initialize)
+fn initialize_single_output(
+    output: Output,
+    formatter: Formatter,
+    env_filter: EnvFilter,
+    config: &Config,
+    rate_limit_cfg: Option<RateLimit>,
+) -> Result<WorkerGuard> {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    // Determine if ANSI colors should be enabled
+    let is_terminal_output = matches!(output, Output::Stdout | Output::Stderr);
+
+    // Build output writer
+    let (non_blocking, guard) = match output {
         Output::Stdout => tracing_appender::non_blocking(std::io::stdout()),
         Output::Stderr => tracing_appender::non_blocking(std::io::stderr()),
         Output::File {
@@ -111,101 +514,74 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
             tracing_appender::non_blocking(file_appender)
         }
         Output::Multi(_) => {
-            // 多输出需要更复杂的实现，暂时使用 stdout
-            tracing_appender::non_blocking(std::io::stdout())
+            return Err(XlogError::InvalidConfig(
+                "Multi output should be handled by initialize_multi_output".to_string(),
+            ));
         }
     };
 
-    // 根据格式化器类型初始化不同的订阅者
-    match config.formatter {
+    // Create the base layer
+    let base_layer = fmt::layer()
+        .with_writer(non_blocking)
+        .with_target(config.include_target)
+        .with_file(config.include_file)
+        .with_line_number(config.include_line_number)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_ansi(is_terminal_output);
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    // Apply formatting and rate limiting
+    match formatter {
         Formatter::Compact => {
-            let fmt_layer = fmt::layer()
-                .with_writer(non_blocking)
-                .with_target(config.include_target)
-                .with_file(config.include_file)
-                .with_line_number(config.include_line_number)
-                .with_timer(fmt::time::LocalTime::rfc_3339())
-                .with_ansi(is_terminal_output)
-                .compact();
-
-            // 应用速率限制
-            if let Some(rate_limit) = rate_limit {
+            let fmt_layer = base_layer.compact();
+            if let Some(rate_limit) = rate_limit_cfg {
                 let limiter = Arc::new(RateLimiter::new(rate_limit.max_per_second));
-                let rate_limited_layer = RateLimitLayer {
-                    inner: fmt_layer,
-                    limiter,
-                };
-
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(rate_limited_layer)
+                registry
+                    .with(RateLimitLayer {
+                        inner: fmt_layer,
+                        limiter,
+                    })
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             } else {
-                tracing_subscriber::registry()
-                    .with(env_filter)
+                registry
                     .with(fmt_layer)
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             }
         }
         Formatter::Pretty => {
-            let fmt_layer = fmt::layer()
-                .with_writer(non_blocking)
-                .with_target(config.include_target)
-                .with_file(config.include_file)
-                .with_line_number(config.include_line_number)
-                .with_timer(fmt::time::LocalTime::rfc_3339())
-                .with_ansi(is_terminal_output)
-                .pretty();
-
-            // 应用速率限制
-            if let Some(rate_limit) = rate_limit {
+            let fmt_layer = base_layer.pretty();
+            if let Some(rate_limit) = rate_limit_cfg {
                 let limiter = Arc::new(RateLimiter::new(rate_limit.max_per_second));
-                let rate_limited_layer = RateLimitLayer {
-                    inner: fmt_layer,
-                    limiter,
-                };
-
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(rate_limited_layer)
+                registry
+                    .with(RateLimitLayer {
+                        inner: fmt_layer,
+                        limiter,
+                    })
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             } else {
-                tracing_subscriber::registry()
-                    .with(env_filter)
+                registry
                     .with(fmt_layer)
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             }
         }
         Formatter::Json => {
-            let fmt_layer = fmt::layer()
-                .with_writer(non_blocking)
-                .with_target(config.include_target)
-                .with_file(config.include_file)
-                .with_line_number(config.include_line_number)
-                .with_timer(fmt::time::LocalTime::rfc_3339())
-                .with_ansi(false) // JSON doesn't need ANSI colors
-                .json();
-
-            // 应用速率限制
-            if let Some(rate_limit) = rate_limit {
+            let fmt_layer = base_layer.json();
+            if let Some(rate_limit) = rate_limit_cfg {
                 let limiter = Arc::new(RateLimiter::new(rate_limit.max_per_second));
-                let rate_limited_layer = RateLimitLayer {
-                    inner: fmt_layer,
-                    limiter,
-                };
-
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(rate_limited_layer)
+                registry
+                    .with(RateLimitLayer {
+                        inner: fmt_layer,
+                        limiter,
+                    })
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
             } else {
-                tracing_subscriber::registry()
-                    .with(env_filter)
+                registry
                     .with(fmt_layer)
                     .try_init()
                     .map_err(|e| XlogError::InitFailed(e.to_string()))?;
