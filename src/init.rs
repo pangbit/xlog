@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::error::{Result, XlogError};
 use crate::formatter::Formatter;
+use crate::level::Level;
 use crate::output::Output;
 use std::sync::Once;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -30,12 +30,38 @@ pub(crate) fn initialize(config: Config) -> Result<WorkerGuard> {
     result.unwrap()
 }
 
+fn build_env_filter(config: &Config) -> Result<EnvFilter> {
+    let mut directives = vec![level_to_str(&config.level).to_string()];
+
+    // 添加模块过滤
+    for (module, level) in &config.module_filters {
+        directives.push(format!("{}={}", module, level_to_str(level)));
+    }
+
+    // 添加自定义指令
+    directives.extend(config.custom_directives.clone());
+
+    // 构建过滤字符串
+    let filter_str = directives.join(",");
+
+    // 解析过滤器
+    EnvFilter::try_new(&filter_str)
+        .map_err(|e| XlogError::InvalidConfig(e.to_string()))
+}
+
+fn level_to_str(level: &Level) -> &'static str {
+    match level {
+        Level::Trace => "trace",
+        Level::Debug => "debug",
+        Level::Info => "info",
+        Level::Warn => "warn",
+        Level::Error => "error",
+    }
+}
+
 fn do_initialize(config: Config) -> Result<WorkerGuard> {
-    // 构建 EnvFilter
-    let level_filter: LevelFilter = config.level.into();
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(level_filter.into())
-        .from_env_lossy();
+    // 使用新的 build_env_filter 替代原有逻辑
+    let env_filter = build_env_filter(&config)?;
 
     // 保存输出类型信息（用于判断是否需要 ANSI 颜色）
     let is_terminal_output = matches!(config.output, Output::Stdout | Output::Stderr);
