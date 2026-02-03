@@ -1,4 +1,5 @@
 mod error;
+mod level;
 mod log;
 
 pub use log::builder;
