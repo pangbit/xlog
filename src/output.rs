@@ -47,7 +47,7 @@ pub enum Output {
         max_files: usize,
     },
     /// 多个输出目标
-    Multi(Vec<Output>),
+    Multi(Vec<OutputWithFormatter>),
 }
 
 impl Output {
@@ -72,9 +72,7 @@ impl Output {
 
     /// 创建多输出 Builder
     pub fn multi() -> MultiOutputBuilder {
-        MultiOutputBuilder {
-            outputs: Vec::new(),
-        }
+        MultiOutputBuilder::new()
     }
 
     /// 关联格式化器
@@ -151,17 +149,24 @@ impl FileOutputBuilder {
 /// 多输出 Builder
 #[derive(Debug)]
 pub struct MultiOutputBuilder {
-    outputs: Vec<Output>,
+    outputs: Vec<OutputWithFormatter>,
 }
 
 impl MultiOutputBuilder {
-    /// 添加一个输出目标
-    pub fn push(mut self, output: Output) -> Self {
+    /// 创建新的多输出 Builder
+    pub fn new() -> Self {
+        Self {
+            outputs: Vec::new(),
+        }
+    }
+
+    /// 添加输出
+    pub fn add(mut self, output: OutputWithFormatter) -> Self {
         self.outputs.push(output);
         self
     }
 
-    /// 构建多输出目标
+    /// 构建多输出
     pub fn build(self) -> Output {
         Output::Multi(self.outputs)
     }
@@ -202,13 +207,67 @@ mod tests {
     #[test]
     fn test_multi_output() {
         let multi = Output::multi()
-            .push(Output::stdout())
-            .push(Output::stderr())
+            .add(Output::stdout().with_formatter(Formatter::Pretty))
+            .add(Output::stderr().with_formatter(Formatter::Json))
             .build();
 
         match multi {
             Output::Multi(outputs) => {
                 assert_eq!(outputs.len(), 2);
+            }
+            _ => panic!("Expected Multi output"),
+        }
+    }
+
+    #[test]
+    fn test_multi_output_with_formatters() {
+        let multi = Output::multi()
+            .add(Output::stdout().with_formatter(Formatter::Pretty))
+            .add(Output::stderr().with_formatter(Formatter::Json))
+            .add(
+                Output::file("./logs")
+                    .with_rotation(Rotation::Daily)
+                    .max_files(7)
+                    .build()
+                    .with_formatter(Formatter::Compact),
+            )
+            .build();
+
+        match multi {
+            Output::Multi(outputs) => {
+                assert_eq!(outputs.len(), 3);
+
+                // Check stdout
+                assert!(matches!(
+                    outputs[0],
+                    OutputWithFormatter::Stdout {
+                        formatter: Formatter::Pretty
+                    }
+                ));
+
+                // Check stderr
+                assert!(matches!(
+                    outputs[1],
+                    OutputWithFormatter::Stderr {
+                        formatter: Formatter::Json
+                    }
+                ));
+
+                // Check file
+                match &outputs[2] {
+                    OutputWithFormatter::File {
+                        path,
+                        rotation,
+                        max_files,
+                        formatter,
+                    } => {
+                        assert_eq!(path, &PathBuf::from("./logs"));
+                        assert!(matches!(rotation, Rotation::Daily));
+                        assert_eq!(*max_files, 7);
+                        assert!(matches!(formatter, Formatter::Compact));
+                    }
+                    _ => panic!("Expected File output"),
+                }
             }
             _ => panic!("Expected Multi output"),
         }
@@ -271,8 +330,8 @@ mod formatter_tests {
     #[should_panic(expected = "Multi output 不支持 with_formatter，请在每个子输出上调用")]
     fn test_multi_with_formatter_panics() {
         let multi = Output::multi()
-            .push(Output::stdout())
-            .push(Output::stderr())
+            .add(Output::stdout().with_formatter(Formatter::Pretty))
+            .add(Output::stderr().with_formatter(Formatter::Json))
             .build();
 
         let _ = multi.with_formatter(Formatter::Json);
