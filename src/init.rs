@@ -3,13 +3,38 @@ use crate::error::{Result, XlogError};
 use crate::formatter::Formatter;
 use crate::level::Level;
 use crate::output::Output;
-use std::sync::Once;
+use crate::rate_limiter::RateLimiter;
+use std::sync::{Arc, Once};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::Layer;
+use tracing::{Event, Subscriber};
 
 static INIT: Once = Once::new();
 static mut INITIALIZED: bool = false;
+
+/// 速率限制层 - 包装另一个层并应用速率限制
+struct RateLimitLayer<L> {
+    inner: L,
+    limiter: Arc<RateLimiter>,
+}
+
+impl<S, L> Layer<S> for RateLimitLayer<L>
+where
+    L: Layer<S>,
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
+        // 检查速率限制
+        if self.limiter.try_acquire() {
+            self.inner.on_event(event, ctx);
+        }
+        // 超过限制则静默丢弃
+    }
+}
 
 /// 初始化日志系统
 pub(crate) fn initialize(config: Config) -> Result<WorkerGuard> {
@@ -63,10 +88,8 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
     // 使用新的 build_env_filter 替代原有逻辑
     let env_filter = build_env_filter(&config)?;
 
-    // 检查速率限制配置
-    if let Some(_rate_limit) = config.rate_limit {
-        // TODO: 在 Task 2.3 中实现 RateLimitLayer
-    }
+    // 保存速率限制配置（如果有）
+    let rate_limit = config.rate_limit;
 
     // 保存输出类型信息（用于判断是否需要 ANSI 颜色）
     let is_terminal_output = matches!(config.output, Output::Stdout | Output::Stderr);
@@ -105,11 +128,26 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
                 .with_ansi(is_terminal_output)
                 .compact();
 
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(fmt_layer)
-                .try_init()
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            // 应用速率限制
+            if let Some(rate_limit) = rate_limit {
+                let limiter = Arc::new(RateLimiter::new(rate_limit.max_per_second));
+                let rate_limited_layer = RateLimitLayer {
+                    inner: fmt_layer,
+                    limiter,
+                };
+
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(rate_limited_layer)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            } else {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt_layer)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            }
         }
         Formatter::Pretty => {
             let fmt_layer = fmt::layer()
@@ -121,11 +159,26 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
                 .with_ansi(is_terminal_output)
                 .pretty();
 
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(fmt_layer)
-                .try_init()
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            // 应用速率限制
+            if let Some(rate_limit) = rate_limit {
+                let limiter = Arc::new(RateLimiter::new(rate_limit.max_per_second));
+                let rate_limited_layer = RateLimitLayer {
+                    inner: fmt_layer,
+                    limiter,
+                };
+
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(rate_limited_layer)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            } else {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt_layer)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            }
         }
         Formatter::Json => {
             let fmt_layer = fmt::layer()
@@ -137,11 +190,26 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
                 .with_ansi(false) // JSON doesn't need ANSI colors
                 .json();
 
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(fmt_layer)
-                .try_init()
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            // 应用速率限制
+            if let Some(rate_limit) = rate_limit {
+                let limiter = Arc::new(RateLimiter::new(rate_limit.max_per_second));
+                let rate_limited_layer = RateLimitLayer {
+                    inner: fmt_layer,
+                    limiter,
+                };
+
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(rate_limited_layer)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            } else {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt_layer)
+                    .try_init()
+                    .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            }
         }
     }
 
