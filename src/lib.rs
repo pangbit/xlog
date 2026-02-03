@@ -37,6 +37,7 @@ mod formatter;
 mod init;
 mod level;
 mod output;
+mod rate_limiter;
 
 // 导出公共类型
 pub use config::Config;
