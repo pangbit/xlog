@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn test_formatter_clone() {
         let formatter = Formatter::Pretty;
-        let cloned = formatter.clone();
+        let cloned = formatter;
         assert!(matches!(cloned, Formatter::Pretty));
     }
 }

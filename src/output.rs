@@ -45,6 +45,8 @@ pub enum Output {
         rotation: Rotation,
         /// 最大保留文件数
         max_files: usize,
+        /// 日志文件名前缀
+        filename_prefix: Option<String>,
     },
     /// 多个输出目标
     Multi(Vec<OutputWithFormatter>),
@@ -67,6 +69,7 @@ impl Output {
             path: path.into(),
             rotation: Rotation::Daily,
             max_files: 7,
+            filename_prefix: None,
         }
     }
 
@@ -84,10 +87,12 @@ impl Output {
                 path,
                 rotation,
                 max_files,
+                filename_prefix,
             } => OutputWithFormatter::File {
                 path,
                 rotation,
                 max_files,
+                filename_prefix,
                 formatter,
             },
             Output::Multi(_) => {
@@ -112,6 +117,8 @@ pub enum OutputWithFormatter {
         rotation: Rotation,
         /// 最大保留文件数
         max_files: usize,
+        /// 日志文件名前缀
+        filename_prefix: Option<String>,
         /// 格式化器
         formatter: Formatter,
     },
@@ -123,6 +130,7 @@ pub struct FileOutputBuilder {
     path: PathBuf,
     rotation: Rotation,
     max_files: usize,
+    filename_prefix: Option<String>,
 }
 
 impl FileOutputBuilder {
@@ -138,12 +146,19 @@ impl FileOutputBuilder {
         self
     }
 
+    /// 设置日志文件名前缀
+    pub fn filename_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.filename_prefix = Some(prefix.into());
+        self
+    }
+
     /// 构建输出目标
     pub fn build(self) -> Output {
         Output::File {
             path: self.path,
             rotation: self.rotation,
             max_files: self.max_files,
+            filename_prefix: self.filename_prefix,
         }
     }
 }
@@ -203,10 +218,32 @@ mod tests {
                 path,
                 rotation,
                 max_files,
+                filename_prefix,
             } => {
                 assert_eq!(path, PathBuf::from("./logs"));
                 assert!(matches!(rotation, Rotation::Hourly));
                 assert_eq!(max_files, 24);
+                assert_eq!(filename_prefix, None);
+            }
+            _ => panic!("Expected File output"),
+        }
+    }
+
+    #[test]
+    fn test_file_output_builder_with_filename_prefix() {
+        let output = Output::file("./logs")
+            .filename_prefix("app.log")
+            .max_files(5)
+            .build();
+
+        match output {
+            Output::File {
+                filename_prefix,
+                max_files,
+                ..
+            } => {
+                assert_eq!(filename_prefix.as_deref(), Some("app.log"));
+                assert_eq!(max_files, 5);
             }
             _ => panic!("Expected File output"),
         }
@@ -267,11 +304,13 @@ mod tests {
                         path,
                         rotation,
                         max_files,
+                        filename_prefix,
                         formatter,
                     } => {
                         assert_eq!(path, &PathBuf::from("./logs"));
                         assert!(matches!(rotation, Rotation::Daily));
                         assert_eq!(*max_files, 7);
+                        assert_eq!(filename_prefix, &None);
                         assert!(matches!(formatter, Formatter::Compact));
                     }
                     _ => panic!("Expected File output"),
@@ -323,11 +362,13 @@ mod formatter_tests {
                 path,
                 rotation,
                 max_files,
+                filename_prefix,
                 formatter,
             } => {
                 assert_eq!(path, PathBuf::from("./logs"));
                 assert!(matches!(rotation, Rotation::Hourly));
                 assert_eq!(max_files, 24);
+                assert_eq!(filename_prefix, None);
                 assert!(matches!(formatter, Formatter::Pretty));
             }
             _ => panic!("Expected File with formatter"),

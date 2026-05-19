@@ -102,6 +102,23 @@ fn do_initialize(config: Config) -> Result<WorkerGuard> {
     }
 }
 
+fn build_file_appender(
+    path: impl AsRef<std::path::Path>,
+    rotation: crate::output::Rotation,
+    max_files: usize,
+    filename_prefix: Option<&str>,
+) -> Result<tracing_appender::rolling::RollingFileAppender> {
+    let mut builder = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(rotation.into())
+        .max_log_files(max_files);
+    if let Some(prefix) = filename_prefix {
+        builder = builder.filename_prefix(prefix);
+    }
+    builder
+        .build(path)
+        .map_err(|e| XlogError::InitFailed(e.to_string()))
+}
+
 /// MultiGuard inner structure for managing multiple WorkerGuards
 struct MultiGuardInner {
     _guards: Vec<WorkerGuard>,
@@ -163,13 +180,10 @@ fn initialize_single_multi(
             path,
             rotation,
             max_files,
+            filename_prefix,
             formatter,
         } => {
-            let fa = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation(rotation.into())
-                .max_log_files(max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let fa = build_file_appender(path, rotation, max_files, filename_prefix.as_deref())?;
             let (nb, g) = tracing_appender::non_blocking(fa);
             (nb, g, formatter)
         }
@@ -258,13 +272,10 @@ fn initialize_dual_multi(
             path,
             rotation,
             max_files,
+            filename_prefix,
             ..
         } => {
-            let fa = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation((*rotation).into())
-                .max_log_files(*max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let fa = build_file_appender(path, *rotation, *max_files, filename_prefix.as_deref())?;
             tracing_appender::non_blocking(fa)
         }
     };
@@ -276,13 +287,10 @@ fn initialize_dual_multi(
             path,
             rotation,
             max_files,
+            filename_prefix,
             ..
         } => {
-            let fa = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation((*rotation).into())
-                .max_log_files(*max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let fa = build_file_appender(path, *rotation, *max_files, filename_prefix.as_deref())?;
             tracing_appender::non_blocking(fa)
         }
     };
@@ -350,13 +358,10 @@ fn initialize_triple_multi(
             path,
             rotation,
             max_files,
+            filename_prefix,
             ..
         } => {
-            let fa = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation((*rotation).into())
-                .max_log_files(*max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let fa = build_file_appender(path, *rotation, *max_files, filename_prefix.as_deref())?;
             tracing_appender::non_blocking(fa)
         }
     };
@@ -368,13 +373,10 @@ fn initialize_triple_multi(
             path,
             rotation,
             max_files,
+            filename_prefix,
             ..
         } => {
-            let fa = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation((*rotation).into())
-                .max_log_files(*max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let fa = build_file_appender(path, *rotation, *max_files, filename_prefix.as_deref())?;
             tracing_appender::non_blocking(fa)
         }
     };
@@ -386,13 +388,10 @@ fn initialize_triple_multi(
             path,
             rotation,
             max_files,
+            filename_prefix,
             ..
         } => {
-            let fa = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation((*rotation).into())
-                .max_log_files(*max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let fa = build_file_appender(path, *rotation, *max_files, filename_prefix.as_deref())?;
             tracing_appender::non_blocking(fa)
         }
     };
@@ -495,12 +494,10 @@ fn initialize_single_output(
             path,
             rotation,
             max_files,
+            filename_prefix,
         } => {
-            let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
-                .rotation(rotation.into())
-                .max_log_files(max_files)
-                .build(path)
-                .map_err(|e| XlogError::InitFailed(e.to_string()))?;
+            let file_appender =
+                build_file_appender(path, rotation, max_files, filename_prefix.as_deref())?;
             tracing_appender::non_blocking(file_appender)
         }
         Output::Multi(_) => {

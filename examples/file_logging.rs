@@ -4,7 +4,7 @@ use xlog::{Config, Level, Output, Result, Rotation};
 
 fn main() -> Result<()> {
     // 创建日志目录（如果不存在）
-    fs::create_dir_all("./logs").map_err(|e| xlog::XlogError::Io(e))?;
+    fs::create_dir_all("./logs").map_err(xlog::XlogError::Io)?;
 
     let _guard = Config::new()
         .level(Level::Debug)
